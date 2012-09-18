@@ -36,11 +36,25 @@ start_link(Ref, NbAcceptors, Transport, TransOpts,
 init([Ref, NbAcceptors, Transport, TransOpts,
 		Protocol, ListenerPid, ConnsPid]) ->
 	{ok, LSocket} = Transport:listen(TransOpts),
+    MaxConns = proplists:get_value(max_connections, TransOpts, 1024),
+    MaxConnPerPeriod = proplists:get_value(max_connections_per_period, TransOpts, 0),
+    ConnPeriodMilliSec = proplists:get_value(connection_period_ms, TransOpts, 0),
 	{ok, {_, Port}} = Transport:sockname(LSocket),
 	ranch_listener:set_port(ListenerPid, Port),
 	Procs = [
 		{{acceptor, self(), N}, {ranch_acceptor, start_link, [
-			Ref, LSocket, Transport, Protocol, ListenerPid, ConnsPid
+			Ref, LSocket, Transport, Protocol, 
+            MaxConns, int_ceil(MaxConnPerPeriod / NbAcceptors), ConnPeriodMilliSec,
+            ListenerPid, ConnsPid
 		]}, permanent, brutal_kill, worker, []}
 			|| N <- lists:seq(1, NbAcceptors)],
 	{ok, {{one_for_one, 10, 10}, Procs}}.
+
+
+-spec int_ceil(X::number()) -> integer(). 
+int_ceil(X) when is_integer(X) -> X;
+int_ceil(X) ->
+    T = trunc(X),
+    if X > T -> T + 1;
+       true  -> T
+    end.
